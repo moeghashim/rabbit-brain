@@ -26,6 +26,7 @@ export default function Home() {
   const [postId, setPostId] = useState<Id<"posts"> | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usageNow] = useState(() => Date.now());
 
   const postData = useQuery(
     api.posts.getPost,
@@ -42,6 +43,10 @@ export default function Home() {
   const author = useQuery(
     api.authors.getAuthor,
     postData?.post?.authorId ? { authorId: postData.post.authorId } : "skip",
+  );
+  const xUsage = useQuery(
+    api.xUsage.getUsage,
+    isSignedIn ? { now: usageNow } : "skip",
   );
 
   useEffect(() => {
@@ -290,6 +295,37 @@ export default function Home() {
               Follow concepts or authors to shape what you see. Your feed will
               populate once you follow something.
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6">
+            <h2 className="text-sm uppercase tracking-[0.2em] text-neutral-500">
+              X API usage
+            </h2>
+            <p className="mt-3 text-sm text-neutral-400">
+              We cache analyses by URL to reduce calls. Paste text if you hit
+              the limit.
+            </p>
+            <div className="mt-4 text-sm text-neutral-300">
+              {!xUsage ? (
+                <p className="text-neutral-500">Sign in to view usage.</p>
+              ) : (
+                <>
+                  <p>
+                    {xUsage.total} / {xUsage.limit} requests in the last{" "}
+                    {xUsage.windowMinutes} minutes
+                  </p>
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Rate limited: {xUsage.rateLimited}
+                  </p>
+                  {xUsage.lastResetAt ? (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      Last reset:{" "}
+                      {new Date(xUsage.lastResetAt).toLocaleTimeString()}
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6">

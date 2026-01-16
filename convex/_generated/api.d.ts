@@ -19,6 +19,7 @@ import type * as lib_users from "../lib/users.js";
 import type * as posts from "../posts.js";
 import type * as users from "../users.js";
 import type * as x from "../x.js";
+import type * as xUsage from "../xUsage.js";
 
 import type {
   ApiFromModules,
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   posts: typeof posts;
   users: typeof users;
   x: typeof x;
+  xUsage: typeof xUsage;
 }>;
 
 /**

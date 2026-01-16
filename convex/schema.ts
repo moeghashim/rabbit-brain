@@ -30,6 +30,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("byUser", ["userId"])
+    .index("byUserAndUrl", ["userId", "url"])
+    .index("byUrl", ["url"])
     .index("byStatus", ["status"]),
   concepts: defineTable({
     name: v.string(),
@@ -78,5 +80,20 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("byUser", ["userId"])
+    .index("byStatus", ["status"]),
+  xRequests: defineTable({
+    endpoint: v.string(),
+    tweetId: v.optional(v.string()),
+    status: v.union(
+      v.literal("ok"),
+      v.literal("rate_limited"),
+      v.literal("error"),
+    ),
+    responseStatus: v.optional(v.number()),
+    message: v.optional(v.string()),
+    resetAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("byCreatedAt", ["createdAt"])
     .index("byStatus", ["status"]),
 });

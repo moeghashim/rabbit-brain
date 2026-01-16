@@ -162,6 +162,38 @@ export const getPostForAnalysis = internalQuery({
   },
 });
 
+export const getCachedAnalysisByUrl = internalQuery({
+  args: { url: v.string() },
+  handler: async (ctx, args) => {
+    const post = await ctx.db
+      .query("posts")
+      .withIndex("byUrl", (q) => q.eq("url", args.url))
+      .order("desc")
+      .first();
+
+    if (!post || post.status !== "analyzed") {
+      return null;
+    }
+
+    const suggestions = await ctx.db
+      .query("suggestions")
+      .withIndex("byPost", (q) => q.eq("postId", post._id))
+      .collect();
+
+    if (suggestions.length === 0) {
+      return null;
+    }
+
+    let authorHandle = post.authorHandle ?? null;
+    if (!authorHandle && post.authorId) {
+      const author = await ctx.db.get(post.authorId);
+      authorHandle = author?.handle ?? null;
+    }
+
+    return { post, suggestions, authorHandle };
+  },
+});
+
 export const applyAnalysis = internalMutation({
   args: {
     postId: v.id("posts"),

@@ -6,6 +6,19 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
 const X_API_BEARER_TOKEN = process.env.X_API_BEARER_TOKEN;
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT = 50;
+
+class XApiError extends Error {
+  status: number;
+  resetAt?: number | null;
+
+  constructor(status: number, message: string, resetAt?: number | null) {
+    super(message);
+    this.status = status;
+    this.resetAt = resetAt ?? null;
+  }
+}
 
 function extractTweetId(rawUrl: string) {
   let parsed: URL;
@@ -47,9 +60,30 @@ async function fetchTweet(tweetId: string) {
     },
   );
 
+  const resetHeader = response.headers.get("x-rate-limit-reset");
+  const resetAt = resetHeader ? Number(resetHeader) * 1000 : null;
+
   if (!response.ok) {
+    if (response.status === 429) {
+      throw new XApiError(
+        429,
+        "X API rate limited. Try again later or paste the post text instead.",
+        resetAt,
+      );
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new XApiError(
+        response.status,
+        "X API credentials rejected. Check X_API_BEARER_TOKEN.",
+        resetAt,
+      );
+    }
     const body = await response.text();
-    throw new Error(`X API error (${response.status}): ${body}`);
+    throw new XApiError(
+      response.status,
+      `X API error (${response.status}): ${body}`,
+      resetAt,
+    );
   }
 
   const payload = await response.json();
@@ -59,7 +93,7 @@ async function fetchTweet(tweetId: string) {
   }
 
   const authorHandle = payload?.includes?.users?.[0]?.username ?? null;
-  return { text, authorHandle };
+  return { text, authorHandle, resetAt };
 }
 
 type ImportPostResponse = {
@@ -76,17 +110,79 @@ export const importPost = action({
       throw new Error("Unsupported X URL.");
     }
 
-    const { text, authorHandle } = await fetchTweet(tweetId);
-    const postId: Id<"posts"> = await ctx.runMutation(
-      internal.posts.createPostInternal,
-      {
-      text,
-      url: args.url,
-      source: "x",
-      authorHandle: authorHandle ?? undefined,
-      },
+    const cached = await ctx.runQuery(
+      internal.posts.getCachedAnalysisByUrl,
+      { url: args.url },
     );
+    if (cached) {
+      const postId: Id<"posts"> = await ctx.runMutation(
+        internal.posts.createPostInternal,
+        {
+          text: cached.post.text,
+          url: args.url,
+          source: "x",
+          authorHandle: cached.authorHandle ?? undefined,
+        },
+      );
 
-    return { postId, text, authorHandle };
+      await ctx.runMutation(internal.posts.applyAnalysis, {
+        postId,
+        authorId: cached.post.authorId ?? undefined,
+        suggestions: cached.suggestions.map((item) => ({
+          conceptId: item.conceptId,
+          score: item.score,
+          rationale: item.rationale,
+        })),
+      });
+
+      return {
+        postId,
+        text: cached.post.text,
+        authorHandle: cached.authorHandle,
+      };
+    }
+
+    const since = Date.now() - RATE_WINDOW_MS;
+    const usage = await ctx.runQuery(internal.xUsage.countRecent, { since });
+    if (usage.total >= RATE_LIMIT) {
+      throw new Error(
+        "X API limit reached for this 15 minute window. Try again later or paste the post text instead.",
+      );
+    }
+
+    try {
+      const { text, authorHandle, resetAt } = await fetchTweet(tweetId);
+      const postId: Id<"posts"> = await ctx.runMutation(
+        internal.posts.createPostInternal,
+        {
+          text,
+          url: args.url,
+          source: "x",
+          authorHandle: authorHandle ?? undefined,
+        },
+      );
+
+      await ctx.runMutation(internal.xUsage.logRequest, {
+        endpoint: "tweets.lookup",
+        tweetId,
+        status: "ok",
+        responseStatus: 200,
+        resetAt: resetAt ?? undefined,
+      });
+
+      return { postId, text, authorHandle };
+    } catch (error) {
+      if (error instanceof XApiError) {
+        await ctx.runMutation(internal.xUsage.logRequest, {
+          endpoint: "tweets.lookup",
+          tweetId,
+          status: error.status === 429 ? "rate_limited" : "error",
+          responseStatus: error.status,
+          message: error.message,
+          resetAt: error.resetAt ?? undefined,
+        });
+      }
+      throw error;
+    }
   },
 });
