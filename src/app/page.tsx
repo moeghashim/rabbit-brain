@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from "@clerk/nextjs";
+import { SignedOut, useUser } from "@clerk/nextjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -90,7 +90,7 @@ export default function Home() {
     const trimmedUrl = url.trim();
 
     if (!trimmedText && !trimmedUrl) {
-      setError("Paste a post or an X URL to analyze.");
+      setError("Add an X URL (recommended) or paste the post text.");
       return;
     }
 
@@ -118,46 +118,13 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050807] text-neutral-100">
-      <div className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(164,239,110,0.18),_transparent_60%)]" />
-        <div className="pointer-events-none absolute -top-40 left-[-120px] h-[360px] w-[360px] rounded-full bg-emerald-500/20 blur-[120px]" />
-        <div className="pointer-events-none absolute top-12 right-[-160px] h-[420px] w-[420px] rounded-full bg-lime-400/20 blur-[140px]" />
-        <div className="pointer-events-none absolute inset-0 opacity-40 bg-[linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:120px_120px]" />
+    <div className="relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(164,239,110,0.18),_transparent_60%)]" />
+      <div className="pointer-events-none absolute -top-40 left-[-120px] h-[360px] w-[360px] rounded-full bg-emerald-500/20 blur-[120px]" />
+      <div className="pointer-events-none absolute top-12 right-[-160px] h-[420px] w-[420px] rounded-full bg-lime-400/20 blur-[140px]" />
+      <div className="pointer-events-none absolute inset-0 opacity-40 bg-[linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:120px_120px]" />
 
-        <header className="relative z-10">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-300 via-lime-400 to-emerald-600 shadow-[0_0_25px_rgba(164,239,110,0.35)]" />
-              <div className="leading-tight">
-                <p className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/70">
-                  rabbitbrain
-                </p>
-                <p className="text-sm text-neutral-300">Concept radar for X</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.3em] text-emerald-100/70">
-              <a href="#analyze" className="transition hover:text-emerald-200">
-                Analyze
-              </a>
-              <a href="/feed" className="transition hover:text-emerald-200">
-                Feed
-              </a>
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="rounded-full border border-emerald-500/40 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-emerald-200/90 transition hover:border-emerald-300/70">
-                    Sign in
-                  </button>
-                </SignInButton>
-              </SignedOut>
-              <SignedIn>
-                <UserButton />
-              </SignedIn>
-            </div>
-          </div>
-        </header>
-
-        <main className="relative z-10 mx-auto max-w-6xl px-6 pb-16 pt-4">
+      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-16 pt-10">
           <section className="grid items-start gap-10 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-8 animate-fade-up">
               <p className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
@@ -216,25 +183,25 @@ export default function Home() {
                 >
                   <div>
                     <label className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/60">
-                      X post
+                      X post URL (recommended)
+                    </label>
+                    <input
+                      value={url}
+                      onChange={(event) => setUrl(event.target.value)}
+                      className="mt-3 w-full rounded-2xl border border-emerald-900/40 bg-black/40 p-4 text-base text-neutral-100 outline-none transition focus:border-emerald-300/60"
+                      placeholder="https://x.com/user/status/..."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/60">
+                      Post text (optional)
                     </label>
                     <textarea
                       value={text}
                       onChange={(event) => setText(event.target.value)}
                       rows={6}
                       className="mt-3 w-full rounded-2xl border border-emerald-900/40 bg-black/40 p-4 text-sm text-neutral-100 outline-none transition focus:border-emerald-300/60"
-                      placeholder="Paste the post text here..."
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/60">
-                      Post URL (optional)
-                    </label>
-                    <input
-                      value={url}
-                      onChange={(event) => setUrl(event.target.value)}
-                      className="mt-3 w-full rounded-2xl border border-emerald-900/40 bg-black/40 p-3 text-sm text-neutral-100 outline-none transition focus:border-emerald-300/60"
-                      placeholder="https://x.com/user/status/..."
+                      placeholder="Optional: paste the post text here..."
                     />
                   </div>
                   {error ? (
@@ -416,8 +383,7 @@ export default function Home() {
               </div>
             </aside>
           </section>
-        </main>
-      </div>
+      </main>
     </div>
   );
 }

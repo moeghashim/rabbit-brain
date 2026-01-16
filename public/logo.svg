@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120" fill="none">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a4ef6e"/>
+      <stop offset="1" stop-color="#6fe36a"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e8f9d9"/>
+      <stop offset="1" stop-color="#c2f2a6"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="18" width="84" height="84" rx="28" fill="#0b120f" stroke="#1b2a22" stroke-width="2"/>
+  <circle cx="52" cy="60" r="30" fill="url(#g)"/>
+  <circle cx="64" cy="48" r="6" fill="#0b120f"/>
+  <path d="M40 45c0-10 8-18 18-18h6" stroke="#0b120f" stroke-width="6" stroke-linecap="round"/>
+  <path d="M36 70c6 8 18 12 32 8" stroke="#0b120f" stroke-width="6" stroke-linecap="round"/>
+  <text x="120" y="70" font-size="46" font-family="Fraunces, 'Times New Roman', serif" fill="#e8f9d9" font-weight="600">rabbitbrain</text>
+  <text x="318" y="70" font-size="46" font-family="Fraunces, 'Times New Roman', serif" fill="url(#g2)" font-weight="600">.fast</text>
+  <text x="122" y="96" font-size="12" letter-spacing="4" font-family="Space Grotesk, Arial, sans-serif" fill="#9cb3a1" text-transform="uppercase">concept radar for x</text>
+</svg>
