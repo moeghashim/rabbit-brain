@@ -4,7 +4,7 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 
 export default function SiteHeader() {
   return (
-    <header className="sticky top-0 z-50 border-b border-emerald-900/30">
+    <header className="sticky top-0 z-50 border-b border-emerald-900/30 bg-[radial-gradient(circle_at_top,_rgba(164,239,110,0.14),_rgba(5,8,7,0.95)_70%)]">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
         <a href="/" className="flex items-center gap-3">
           <img src="/icon.svg" alt="Rabbitbrain logo" className="h-9 w-9" />
