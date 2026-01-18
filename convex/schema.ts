@@ -43,6 +43,19 @@ export default defineSchema({
   })
     .index("byName", ["name"])
     .index("byStatus", ["status"]),
+  tracks: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    sourcePostId: v.optional(v.id("posts")),
+    createdAt: v.number(),
+  }).index("byUser", ["userId"]),
+  trackConcepts: defineTable({
+    trackId: v.id("tracks"),
+    conceptId: v.id("concepts"),
+    createdAt: v.number(),
+  })
+    .index("byTrack", ["trackId"])
+    .index("byConcept", ["conceptId"]),
   suggestions: defineTable({
     postId: v.id("posts"),
     conceptId: v.id("concepts"),

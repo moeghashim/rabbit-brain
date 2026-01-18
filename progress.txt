@@ -1,0 +1,5 @@
+2026-01-18 - Decided to model learning tracks as user-owned records with trackConcepts join table; UI will suggest tracks per concept from analysis and allow explicit Learn from author CTA with rejection feedback.
+2026-01-18 - Added tracks + trackConcepts tables and created Convex tracks module (createTrack, listTracks) to store user learning tracks derived from concept suggestions.
+2026-01-18 - Added UI affordances for learning tracks, concept rejection feedback, and explicit Learn from author CTA; introduced Tracks page and nav entry.
+2026-01-18 - Fixed track list typing by returning concept IDs as Id<"concepts"> and filtering nulls before response.
+2026-01-18 - Cleaned lint errors: typed follow sets in posts feed logic and switched layout/header nav links to Next Link components.

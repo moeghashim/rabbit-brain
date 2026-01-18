@@ -5,6 +5,7 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { getOrCreateUser, requireUser } from "./lib/users";
 
 export const createPost = mutation({
@@ -94,15 +95,15 @@ export const listFeed = query({
       return [];
     }
 
-    const conceptIds = new Set(
+    const conceptIds = new Set<Id<"concepts">>(
       follows
         .filter((follow) => follow.targetType === "concept")
-        .map((follow) => follow.targetId),
+        .map((follow) => follow.targetId as Id<"concepts">),
     );
-    const authorIds = new Set(
+    const authorIds = new Set<Id<"authors">>(
       follows
         .filter((follow) => follow.targetType === "author")
-        .map((follow) => follow.targetId),
+        .map((follow) => follow.targetId as Id<"authors">),
     );
 
     const posts = await ctx.db.query("posts").order("desc").take(50);
@@ -119,15 +120,14 @@ export const listFeed = query({
     }[];
 
     for (const post of posts) {
-      const matchedAuthor =
-        !!post.authorId && authorIds.has(post.authorId as any);
+      const matchedAuthor = !!post.authorId && authorIds.has(post.authorId);
       const author = post.authorId ? await ctx.db.get(post.authorId) : null;
       const suggestions = await ctx.db
         .query("suggestions")
         .withIndex("byPost", (q) => q.eq("postId", post._id))
         .collect();
       const matchedSuggestions = suggestions.filter((suggestion) =>
-        conceptIds.has(suggestion.conceptId as any),
+        conceptIds.has(suggestion.conceptId),
       );
       const suggestionsWithNames = await Promise.all(
         matchedSuggestions.map(async (suggestion) => {

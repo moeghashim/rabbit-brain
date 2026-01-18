@@ -8,6 +8,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 type ConceptCard = {
   id: Id<"concepts">;
+  suggestionId: Id<"suggestions">;
   name: string;
   rationale: string;
   score: number;
@@ -20,6 +21,8 @@ export default function Home() {
   const analyzePost = useAction(api.analysis.analyzePost);
   const importPost = useAction(api.x.importPost);
   const toggleFollow = useMutation(api.follows.toggleFollow);
+  const submitFeedback = useMutation(api.feedback.submitFeedback);
+  const createTrack = useMutation(api.tracks.createTrack);
 
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
@@ -27,6 +30,10 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usageNow] = useState(() => Date.now());
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<
+    Array<Id<"suggestions">>
+  >([]);
+  const [creatingTrackId, setCreatingTrackId] = useState<string | null>(null);
 
   const postData = useQuery(
     api.posts.getPost,
@@ -40,6 +47,7 @@ export default function Home() {
     api.follows.listFollows,
     isSignedIn ? {} : "skip",
   );
+  const tracks = useQuery(api.tracks.listTracks, isSignedIn ? {} : "skip");
   const author = useQuery(
     api.authors.getAuthor,
     postData?.post?.authorId ? { authorId: postData.post.authorId } : "skip",
@@ -55,6 +63,10 @@ export default function Home() {
     }
   }, [ensureUser, isSignedIn]);
 
+  useEffect(() => {
+    setDismissedSuggestionIds([]);
+  }, [postId]);
+
   const followKeys = useMemo(() => {
     const keys = new Set<string>();
     if (!follows) return keys;
@@ -64,18 +76,87 @@ export default function Home() {
     return keys;
   }, [follows]);
 
+  const dismissedSet = useMemo(() => {
+    return new Set(dismissedSuggestionIds.map((id) => String(id)));
+  }, [dismissedSuggestionIds]);
+
+  const trackedConceptIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!tracks) return ids;
+    for (const track of tracks) {
+      for (const concept of track.concepts) {
+        ids.add(String(concept._id));
+      }
+    }
+    return ids;
+  }, [tracks]);
+
   const suggestions: ConceptCard[] = useMemo(() => {
     if (!postData?.suggestions) return [];
     return postData.suggestions
-      .filter((entry) => entry.concept)
+      .filter(
+        (entry) =>
+          entry.concept && !dismissedSet.has(String(entry.suggestion._id)),
+      )
       .map((entry) => ({
         id: entry.concept!._id,
+        suggestionId: entry.suggestion._id,
         name: entry.concept!.name,
         rationale: entry.suggestion.rationale,
         score: entry.suggestion.score,
       }))
       .slice(0, 8);
-  }, [postData]);
+  }, [dismissedSet, postData]);
+
+  async function handleRejectSuggestion(suggestionId: Id<"suggestions">) {
+    if (!isSignedIn) {
+      setError("Sign in to reject suggestions.");
+      return;
+    }
+    try {
+      await submitFeedback({ suggestionId, vote: "down" });
+      setDismissedSuggestionIds((prev) => [...prev, suggestionId]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save feedback.");
+    }
+  }
+
+  async function handleCreateTrack(conceptId: Id<"concepts">) {
+    if (!isSignedIn) {
+      setError("Sign in to start a learning track.");
+      return;
+    }
+    if (!postId) {
+      setError("Analyze a post before starting a track.");
+      return;
+    }
+    setCreatingTrackId(String(conceptId));
+    try {
+      await createTrack({
+        conceptIds: [conceptId],
+        postId,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start track.");
+    } finally {
+      setCreatingTrackId(null);
+    }
+  }
+
+  async function handleLearnAuthor(authorId: Id<"authors">) {
+    if (!isSignedIn) {
+      setError("Sign in to learn from authors.");
+      return;
+    }
+    if (followKeys.has(`author:${String(authorId)}`)) {
+      return;
+    }
+    try {
+      await toggleFollow({ targetType: "author", targetId: authorId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to follow author.");
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -273,11 +354,66 @@ export default function Home() {
                         >
                           {isFollowing ? "Unfollow" : "Follow concept"}
                         </button>
+                        <button
+                          onClick={() =>
+                            handleRejectSuggestion(concept.suggestionId)
+                          }
+                          className="mt-3 w-full rounded-full border border-rose-500/30 px-3 py-2 text-[10px] uppercase tracking-[0.3em] text-rose-200/70 transition hover:border-rose-400/60"
+                        >
+                          Not relevant
+                        </button>
                       </div>
                     );
                   })
                 )}
               </div>
+
+              {suggestions.length > 0 ? (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
+                      Learning tracks
+                    </h3>
+                    <p className="mt-2 text-sm text-neutral-400">
+                      Start a Feynman-style track from any concept you want to
+                      master.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {suggestions.map((concept) => {
+                      const isTracked = trackedConceptIds.has(
+                        String(concept.id),
+                      );
+                      const isCreating =
+                        creatingTrackId === String(concept.id);
+                      return (
+                        <div
+                          key={`track-${concept.id}`}
+                          className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-5"
+                        >
+                          <p className="text-lg font-semibold text-neutral-100">
+                            Learn {concept.name}
+                          </p>
+                          <p className="mt-2 text-sm text-neutral-400">
+                            {concept.rationale}
+                          </p>
+                          <button
+                            onClick={() => handleCreateTrack(concept.id)}
+                            disabled={isTracked || isCreating}
+                            className="mt-4 w-full rounded-full border border-emerald-500/40 px-3 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isTracked
+                              ? "Track active"
+                              : isCreating
+                                ? "Starting..."
+                                : "Start track"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               {author ? (
                 <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-6">
@@ -286,23 +422,34 @@ export default function Home() {
                       <p className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/60">
                         Author
                       </p>
-                      <p className="mt-2 text-lg font-semibold text-neutral-100">
-                        @{author.handle}
-                      </p>
+                        <p className="mt-2 text-lg font-semibold text-neutral-100">
+                          @{author.handle}
+                        </p>
+                      </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => handleLearnAuthor(author._id)}
+                        disabled={followKeys.has(`author:${String(author._id)}`)}
+                        className="rounded-full border border-emerald-500/40 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {followKeys.has(`author:${String(author._id)}`)
+                          ? "Learning enabled"
+                          : "Learn from author"}
+                      </button>
+                      {followKeys.has(`author:${String(author._id)}`) ? (
+                        <button
+                          onClick={() =>
+                            toggleFollow({
+                              targetType: "author",
+                              targetId: author._id,
+                            })
+                          }
+                          className="rounded-full border border-rose-500/30 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-rose-200/70 transition hover:border-rose-400/60"
+                        >
+                          Unfollow
+                        </button>
+                      ) : null}
                     </div>
-                    <button
-                      onClick={() =>
-                        toggleFollow({
-                          targetType: "author",
-                          targetId: author._id,
-                        })
-                      }
-                      className="rounded-full border border-emerald-500/40 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300"
-                    >
-                      {followKeys.has(`author:${String(author._id)}`)
-                        ? "Unfollow"
-                        : "Follow author"}
-                    </button>
                   </div>
                 </div>
               ) : null}

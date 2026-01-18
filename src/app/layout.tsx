@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Fraunces, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import Providers from "./providers";
@@ -53,12 +54,12 @@ export default function RootLayout({
                     Concept radar for X. Built for learning trails.
                   </p>
                   <div className="flex gap-4 text-[11px] uppercase tracking-[0.3em] text-emerald-100/70">
-                    <a href="/#analyze" className="hover:text-emerald-200">
+                    <Link href="/#analyze" className="hover:text-emerald-200">
                       Analyze
-                    </a>
-                    <a href="/feed" className="hover:text-emerald-200">
+                    </Link>
+                    <Link href="/feed" className="hover:text-emerald-200">
                       Feed
-                    </a>
+                    </Link>
                   </div>
                 </div>
               </footer>

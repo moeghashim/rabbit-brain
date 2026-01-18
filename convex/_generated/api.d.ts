@@ -17,6 +17,7 @@ import type * as feedback from "../feedback.js";
 import type * as follows from "../follows.js";
 import type * as lib_users from "../lib/users.js";
 import type * as posts from "../posts.js";
+import type * as tracks from "../tracks.js";
 import type * as users from "../users.js";
 import type * as x from "../x.js";
 import type * as xUsage from "../xUsage.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   follows: typeof follows;
   "lib/users": typeof lib_users;
   posts: typeof posts;
+  tracks: typeof tracks;
   users: typeof users;
   x: typeof x;
   xUsage: typeof xUsage;
