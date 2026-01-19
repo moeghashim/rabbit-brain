@@ -55,13 +55,6 @@ export default function FeedPage() {
                   </a>
                 ) : null}
               </div>
-              {item.post.screenshotUrl ? (
-                <img
-                  src={item.post.screenshotUrl}
-                  alt="Captured post"
-                  className="mt-4 w-full rounded-2xl border border-emerald-900/40 object-cover"
-                />
-              ) : null}
               <p className="mt-3 text-sm text-neutral-200">{item.post.text}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {item.matchedAuthor ? (

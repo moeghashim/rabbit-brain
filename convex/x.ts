@@ -4,7 +4,21 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { Buffer } from "node:buffer";
+
+const X_API_BEARER_TOKEN = process.env.X_API_BEARER_TOKEN;
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT = 50;
+
+class XApiError extends Error {
+  status: number;
+  resetAt?: number | null;
+
+  constructor(status: number, message: string, resetAt?: number | null) {
+    super(message);
+    this.status = status;
+    this.resetAt = resetAt ?? null;
+  }
+}
 
 function extractTweetId(rawUrl: string) {
   let parsed: URL;
@@ -48,48 +62,54 @@ function extractAuthorHandle(rawUrl: string) {
   return null;
 }
 
-const CAPTURE_SERVICE_URL = process.env.CAPTURE_SERVICE_URL;
-const CAPTURE_SERVICE_TOKEN = process.env.CAPTURE_SERVICE_TOKEN;
-
-type CaptureResponse = {
-  text: string;
-  screenshotBase64?: string | null;
-  authorHandle?: string | null;
-  requiresAuth?: boolean | null;
-};
-
-async function capturePost(url: string, screenshotOnly = false) {
-  if (!CAPTURE_SERVICE_URL) {
-    throw new Error(
-      "Capture service not configured. Set CAPTURE_SERVICE_URL.",
-    );
+async function fetchTweet(tweetId: string) {
+  if (!X_API_BEARER_TOKEN) {
+    throw new Error("X API is not configured. Set X_API_BEARER_TOKEN.");
   }
 
-  const response = await fetch(CAPTURE_SERVICE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(CAPTURE_SERVICE_TOKEN
-        ? { Authorization: `Bearer ${CAPTURE_SERVICE_TOKEN}` }
-        : {}),
+  const response = await fetch(
+    `https://api.x.com/2/tweets/${tweetId}?expansions=author_id&user.fields=username`,
+    {
+      headers: {
+        Authorization: `Bearer ${X_API_BEARER_TOKEN}`,
+      },
     },
-    body: JSON.stringify({ url, screenshotOnly }),
-  });
+  );
+
+  const resetHeader = response.headers.get("x-rate-limit-reset");
+  const resetAt = resetHeader ? Number(resetHeader) * 1000 : null;
 
   if (!response.ok) {
+    if (response.status === 429) {
+      throw new XApiError(
+        429,
+        "X API rate limited. Try again later or paste the post text instead.",
+        resetAt,
+      );
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new XApiError(
+        response.status,
+        "X API credentials rejected. Check X_API_BEARER_TOKEN.",
+        resetAt,
+      );
+    }
     const body = await response.text();
-    throw new Error(
-      `Capture service error (${response.status}): ${body || "Unknown error"}`,
+    throw new XApiError(
+      response.status,
+      `X API error (${response.status}): ${body}`,
+      resetAt,
     );
   }
 
-  const payload = (await response.json()) as CaptureResponse;
-  return {
-    text: payload.text ?? "",
-    screenshotBase64: payload.screenshotBase64 ?? null,
-    authorHandle: payload.authorHandle ?? null,
-    requiresAuth: payload.requiresAuth ?? false,
-  };
+  const payload = await response.json();
+  const text = payload?.data?.text;
+  if (!text) {
+    throw new Error("X API returned no post text.");
+  }
+
+  const authorHandle = payload?.includes?.users?.[0]?.username ?? null;
+  return { text, authorHandle, resetAt };
 }
 
 type ImportPostResponse = {
@@ -101,7 +121,8 @@ type ImportPostResponse = {
 export const importPost = action({
   args: { url: v.string() },
   handler: async (ctx, args): Promise<ImportPostResponse> => {
-    if (!extractTweetId(args.url)) {
+    const tweetId = extractTweetId(args.url);
+    if (!tweetId) {
       throw new Error("Unsupported X URL.");
     }
 
@@ -110,20 +131,6 @@ export const importPost = action({
       { url: args.url },
     );
     if (cached) {
-      let screenshotId = cached.post.screenshotId ?? undefined;
-      if (!screenshotId) {
-        try {
-          const capture = await capturePost(args.url, true);
-          if (capture.screenshotBase64) {
-            const image = Buffer.from(capture.screenshotBase64, "base64");
-            const blob = new Blob([image], { type: "image/png" });
-            screenshotId = await ctx.storage.store(blob);
-          }
-        } catch {
-          // If capture fails, fall back to cached text without screenshot.
-        }
-      }
-
       const postId: Id<"posts"> = await ctx.runMutation(
         internal.posts.createPostInternal,
         {
@@ -131,7 +138,6 @@ export const importPost = action({
           url: args.url,
           source: "x",
           authorHandle: cached.authorHandle ?? undefined,
-          screenshotId,
         },
       );
 
@@ -151,38 +157,47 @@ export const importPost = action({
         authorHandle: cached.authorHandle,
       };
     }
-    const { text, screenshotBase64, authorHandle, requiresAuth } =
-      await capturePost(args.url);
-    if (requiresAuth) {
+    const since = Date.now() - RATE_WINDOW_MS;
+    const usage = await ctx.runQuery(internal.xUsage.countRecent, { since });
+    if (usage.total >= RATE_LIMIT) {
       throw new Error(
-        "X requires login. Set X_COOKIE on the capture worker with your X auth cookies.",
+        "X API limit reached for this 15 minute window. Try again later or paste the post text instead.",
       );
     }
-    if (!text) {
-      throw new Error("No post text found from browser capture.");
-    }
-    let screenshotId: Id<"_storage"> | undefined;
-    if (screenshotBase64) {
-      const image = Buffer.from(screenshotBase64, "base64");
-      const blob = new Blob([image], { type: "image/png" });
-      screenshotId = await ctx.storage.store(blob);
-    }
 
-    const postId: Id<"posts"> = await ctx.runMutation(
-      internal.posts.createPostInternal,
-      {
-        text,
-        url: args.url,
-        source: "x",
-        screenshotId,
-        authorHandle: authorHandle ?? extractAuthorHandle(args.url) ?? undefined,
-      },
-    );
+    try {
+      const { text, authorHandle, resetAt } = await fetchTweet(tweetId);
+      const postId: Id<"posts"> = await ctx.runMutation(
+        internal.posts.createPostInternal,
+        {
+          text,
+          url: args.url,
+          source: "x",
+          authorHandle: authorHandle ?? undefined,
+        },
+      );
 
-    return {
-      postId,
-      text,
-      authorHandle: authorHandle ?? extractAuthorHandle(args.url),
-    };
+      await ctx.runMutation(internal.xUsage.logRequest, {
+        endpoint: "tweets.lookup",
+        tweetId,
+        status: "ok",
+        responseStatus: 200,
+        resetAt: resetAt ?? undefined,
+      });
+
+      return { postId, text, authorHandle };
+    } catch (error) {
+      if (error instanceof XApiError) {
+        await ctx.runMutation(internal.xUsage.logRequest, {
+          endpoint: "tweets.lookup",
+          tweetId,
+          status: error.status === 429 ? "rate_limited" : "error",
+          responseStatus: error.status,
+          message: error.message,
+          resetAt: error.resetAt ?? undefined,
+        });
+      }
+      throw error;
+    }
   },
 });

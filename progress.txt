@@ -16,3 +16,6 @@
 2026-01-18 - Updated analyze flow to always try URL capture for screenshots when a URL is provided, with fallback to pasted text if capture fails.
 2026-01-19 - Fixed Cloudflare capture worker crash by importing Buffer and redeployed the worker.
 2026-01-19 - Added login-wall detection and optional X_COOKIE support to the Cloudflare capture worker; Convex now surfaces auth-needed error.
+2026-01-19 - Removed screenshot capture flow and Cloudflare worker; reverted X import to X API text-only and removed screenshot UI.
+2026-01-19 - Removed screenshotId from post schema and internal create mutation to fully drop screenshot feature.
+2026-01-19 - Restored tweetId extraction when reverting to X API import to fix TypeScript errors.

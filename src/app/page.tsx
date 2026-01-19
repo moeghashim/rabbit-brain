@@ -362,19 +362,6 @@ export default function Home() {
                 )}
               </div>
 
-              {postData?.post?.screenshotUrl ? (
-                <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/60">
-                    Post preview
-                  </p>
-                  <img
-                    src={postData.post.screenshotUrl}
-                    alt="Captured post"
-                    className="mt-4 w-full rounded-2xl border border-emerald-900/40 object-cover"
-                  />
-                </div>
-              ) : null}
-
               {author ? (
                 <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-6">
                   <div className="flex items-center justify-between gap-4">
@@ -428,11 +415,10 @@ export default function Home() {
 
               <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-6">
                 <h2 className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
-                  Browser capture
+                  X import
                 </h2>
                 <p className="mt-3 text-sm text-neutral-400">
-                  We render the post in a browser to capture text + screenshots
-                  for easier recall.
+                  Paste an X URL to fetch the post text for analysis.
                 </p>
               </div>
 
@@ -454,22 +440,13 @@ export default function Home() {
                         onClick={() => setPostId(post._id)}
                         className="w-full rounded-2xl border border-emerald-900/40 bg-black/40 px-4 py-3 text-left text-xs text-neutral-400 transition hover:border-emerald-500/40"
                       >
-                        <div className="flex items-start gap-3">
-                          {post.screenshotUrl ? (
-                            <img
-                              src={post.screenshotUrl}
-                              alt="Captured post"
-                              className="h-14 w-14 rounded-xl border border-emerald-900/40 object-cover"
-                            />
-                          ) : null}
-                          <div>
-                            <p className="line-clamp-2 text-sm text-neutral-200">
-                              {post.text}
-                            </p>
-                            <p className="mt-2 text-[11px] uppercase tracking-[0.3em] text-neutral-500">
-                              {post.status}
-                            </p>
-                          </div>
+                        <div>
+                          <p className="line-clamp-2 text-sm text-neutral-200">
+                            {post.text}
+                          </p>
+                          <p className="mt-2 text-[11px] uppercase tracking-[0.3em] text-neutral-500">
+                            {post.status}
+                          </p>
                         </div>
                       </button>
                     ))
