@@ -327,7 +327,7 @@ export default function Home() {
                     );
                     return (
                       <div
-                        key={concept.id}
+                        key={concept.suggestionId}
                         className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-5"
                       >
                         <div className="flex items-start justify-between gap-3">

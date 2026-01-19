@@ -3,3 +3,4 @@
 2026-01-18 - Added UI affordances for learning tracks, concept rejection feedback, and explicit Learn from author CTA; introduced Tracks page and nav entry.
 2026-01-18 - Fixed track list typing by returning concept IDs as Id<"concepts"> and filtering nulls before response.
 2026-01-18 - Cleaned lint errors: typed follow sets in posts feed logic and switched layout/header nav links to Next Link components.
+2026-01-18 - Fixed duplicate React key issue by keying suggestion cards on suggestionId instead of conceptId.
