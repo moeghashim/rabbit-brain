@@ -18,6 +18,31 @@ const STOPWORDS = new Set([
   "your",
   "into",
   "about",
+  "also",
+  "some",
+  "like",
+  "very",
+  "really",
+  "more",
+  "most",
+  "many",
+  "much",
+  "even",
+  "then",
+  "than",
+  "there",
+  "here",
+  "they",
+  "them",
+  "their",
+  "these",
+  "those",
+  "its",
+  "it's",
+  "our",
+  "we",
+  "us",
+  "you",
   "just",
   "when",
   "what",
@@ -34,7 +59,6 @@ const STOPWORDS = new Set([
   "but",
   "can",
   "has",
-  "its",
   "out",
   "why",
   "how",
@@ -65,6 +89,33 @@ function extractAuthorHandle(text: string) {
   return match ? match[1] : null;
 }
 
+function normalizeConceptName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function isBadConceptName(value: string) {
+  if (!value) return true;
+  const normalized = normalizeConceptName(value);
+  if (!normalized) return true;
+  const tokens = normalized.split(" ").filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => STOPWORDS.has(token));
+}
+
+function sanitizeConcepts(concepts: ConceptSuggestion[]) {
+  const seen = new Set<string>();
+  return concepts.filter((concept) => {
+    if (isBadConceptName(concept.name)) {
+      return false;
+    }
+    const normalized = normalizeConceptName(concept.name);
+    if (!normalized || seen.has(normalized)) {
+      return false;
+    }
+    seen.add(normalized);
+    return true;
+  });
+}
+
 function naiveExtract(text: string): AnalysisResult {
   const words = (text.toLowerCase().match(/[a-z0-9+\-]{3,}/g) || [])
     .filter((word) => !STOPWORDS.has(word))
@@ -84,7 +135,7 @@ function naiveExtract(text: string): AnalysisResult {
     }));
 
   return {
-    concepts,
+    concepts: sanitizeConcepts(concepts),
     authorHandle: extractAuthorHandle(text),
   };
 }
@@ -112,7 +163,7 @@ async function llmExtract(text: string): Promise<AnalysisResult> {
         {
           role: "user",
           content: JSON.stringify({
-            task: "Extract 5-8 learning concepts, each with name, rationale, score (0-1), and optional description. Optionally include authorHandle if present.",
+            task: "Extract 5-8 learning concepts, each with name, rationale, score (0-1), and optional description. Avoid filler words (e.g., 'some', 'like') and generic stopwords. Optionally include authorHandle if present.",
             text,
           }),
         },
@@ -136,7 +187,11 @@ async function llmExtract(text: string): Promise<AnalysisResult> {
     if (!parsed?.concepts?.length) {
       return naiveExtract(text);
     }
-    return parsed;
+    const cleaned = sanitizeConcepts(parsed.concepts);
+    if (cleaned.length === 0) {
+      return naiveExtract(text);
+    }
+    return { ...parsed, concepts: cleaned };
   } catch {
     return naiveExtract(text);
   }

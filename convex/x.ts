@@ -4,21 +4,11 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-
-const X_API_BEARER_TOKEN = process.env.X_API_BEARER_TOKEN;
-const RATE_WINDOW_MS = 15 * 60 * 1000;
-const RATE_LIMIT = 50;
-
-class XApiError extends Error {
-  status: number;
-  resetAt?: number | null;
-
-  constructor(status: number, message: string, resetAt?: number | null) {
-    super(message);
-    this.status = status;
-    this.resetAt = resetAt ?? null;
-  }
-}
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
+import path from "node:path";
 
 function extractTweetId(rawUrl: string) {
   let parsed: URL;
@@ -46,54 +36,86 @@ function extractTweetId(rawUrl: string) {
   return null;
 }
 
-async function fetchTweet(tweetId: string) {
-  if (!X_API_BEARER_TOKEN) {
-    throw new Error("X API is not configured. Set X_API_BEARER_TOKEN.");
+function extractAuthorHandle(rawUrl: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
   }
 
-  const response = await fetch(
-    `https://api.x.com/2/tweets/${tweetId}?expansions=author_id&user.fields=username`,
-    {
-      headers: {
-        Authorization: `Bearer ${X_API_BEARER_TOKEN}`,
-      },
-    },
-  );
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const statusIndex = parts.indexOf("status");
+  if (statusIndex > 0) {
+    return parts[statusIndex - 1] ?? null;
+  }
+  return null;
+}
 
-  const resetHeader = response.headers.get("x-rate-limit-reset");
-  const resetAt = resetHeader ? Number(resetHeader) * 1000 : null;
+const execFileAsync = promisify(execFile);
 
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new XApiError(
-        429,
-        "X API rate limited. Try again later or paste the post text instead.",
-        resetAt,
-      );
+async function runAgentBrowser(args: string[]) {
+  const { stdout } = await execFileAsync("agent-browser", args, {
+    timeout: 60000,
+  });
+  return stdout.trim();
+}
+
+function parseAgentJson(output: string) {
+  try {
+    return JSON.parse(output);
+  } catch {
+    return null;
+  }
+}
+
+async function capturePost(url: string) {
+  const session = `rb-${randomUUID()}`;
+  const screenshotPath = path.join("/tmp", `${session}.png`);
+  const waitScript = "new Promise((resolve) => setTimeout(resolve, 1200))";
+  const textScript = [
+    "(() => {",
+    "const nodes = Array.from(document.querySelectorAll('[data-testid=\"tweetText\"]'));",
+    "if (nodes.length) return nodes.map((n) => n.innerText).join(\"\\n\");",
+    "const article = document.querySelector(\"article\");",
+    "if (article) return article.innerText;",
+    "return document.body?.innerText?.slice(0, 4000) || \"\";",
+    "})()",
+  ].join("");
+
+  try {
+    await runAgentBrowser(["--session", session, "open", url]);
+    await runAgentBrowser(["--session", session, "eval", waitScript]);
+    const textOutput = await runAgentBrowser([
+      "--session",
+      session,
+      "eval",
+      textScript,
+      "--json",
+    ]);
+    const parsed = parseAgentJson(textOutput);
+    const text =
+      typeof parsed?.data === "string"
+        ? parsed.data
+        : typeof parsed?.result === "string"
+          ? parsed.result
+          : "";
+    await runAgentBrowser([
+      "--session",
+      session,
+      "screenshot",
+      screenshotPath,
+      "--full",
+    ]);
+
+    return { text, screenshotPath };
+  } finally {
+    try {
+      await runAgentBrowser(["--session", session, "close"]);
+    } catch {
+      // Swallow cleanup failures.
     }
-    if (response.status === 401 || response.status === 403) {
-      throw new XApiError(
-        response.status,
-        "X API credentials rejected. Check X_API_BEARER_TOKEN.",
-        resetAt,
-      );
-    }
-    const body = await response.text();
-    throw new XApiError(
-      response.status,
-      `X API error (${response.status}): ${body}`,
-      resetAt,
-    );
   }
-
-  const payload = await response.json();
-  const text = payload?.data?.text;
-  if (!text) {
-    throw new Error("X API returned no post text.");
-  }
-
-  const authorHandle = payload?.includes?.users?.[0]?.username ?? null;
-  return { text, authorHandle, resetAt };
 }
 
 type ImportPostResponse = {
@@ -105,8 +127,7 @@ type ImportPostResponse = {
 export const importPost = action({
   args: { url: v.string() },
   handler: async (ctx, args): Promise<ImportPostResponse> => {
-    const tweetId = extractTweetId(args.url);
-    if (!tweetId) {
+    if (!extractTweetId(args.url)) {
       throw new Error("Unsupported X URL.");
     }
 
@@ -122,6 +143,7 @@ export const importPost = action({
           url: args.url,
           source: "x",
           authorHandle: cached.authorHandle ?? undefined,
+          screenshotId: cached.post.screenshotId ?? undefined,
         },
       );
 
@@ -141,48 +163,26 @@ export const importPost = action({
         authorHandle: cached.authorHandle,
       };
     }
-
-    const since = Date.now() - RATE_WINDOW_MS;
-    const usage = await ctx.runQuery(internal.xUsage.countRecent, { since });
-    if (usage.total >= RATE_LIMIT) {
-      throw new Error(
-        "X API limit reached for this 15 minute window. Try again later or paste the post text instead.",
-      );
+    const { text, screenshotPath } = await capturePost(args.url);
+    if (!text) {
+      throw new Error("No post text found from browser capture.");
     }
+    const image = await readFile(screenshotPath);
+    const blob = new Blob([image], { type: "image/png" });
+    const screenshotId = await ctx.storage.store(blob);
+    await rm(screenshotPath, { force: true });
 
-    try {
-      const { text, authorHandle, resetAt } = await fetchTweet(tweetId);
-      const postId: Id<"posts"> = await ctx.runMutation(
-        internal.posts.createPostInternal,
-        {
-          text,
-          url: args.url,
-          source: "x",
-          authorHandle: authorHandle ?? undefined,
-        },
-      );
+    const postId: Id<"posts"> = await ctx.runMutation(
+      internal.posts.createPostInternal,
+      {
+        text,
+        url: args.url,
+        source: "x",
+        screenshotId,
+        authorHandle: extractAuthorHandle(args.url) ?? undefined,
+      },
+    );
 
-      await ctx.runMutation(internal.xUsage.logRequest, {
-        endpoint: "tweets.lookup",
-        tweetId,
-        status: "ok",
-        responseStatus: 200,
-        resetAt: resetAt ?? undefined,
-      });
-
-      return { postId, text, authorHandle };
-    } catch (error) {
-      if (error instanceof XApiError) {
-        await ctx.runMutation(internal.xUsage.logRequest, {
-          endpoint: "tweets.lookup",
-          tweetId,
-          status: error.status === 429 ? "rate_limited" : "error",
-          responseStatus: error.status,
-          message: error.message,
-          resetAt: error.resetAt ?? undefined,
-        });
-      }
-      throw error;
-    }
+    return { postId, text, authorHandle: extractAuthorHandle(args.url) };
   },
 });

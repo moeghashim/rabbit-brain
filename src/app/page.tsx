@@ -29,11 +29,9 @@ export default function Home() {
   const [postId, setPostId] = useState<Id<"posts"> | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [usageNow] = useState(() => Date.now());
   const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<
     Array<Id<"suggestions">>
   >([]);
-  const [creatingTrackId, setCreatingTrackId] = useState<string | null>(null);
 
   const postData = useQuery(
     api.posts.getPost,
@@ -51,10 +49,6 @@ export default function Home() {
   const author = useQuery(
     api.authors.getAuthor,
     postData?.post?.authorId ? { authorId: postData.post.authorId } : "skip",
-  );
-  const xUsage = useQuery(
-    api.xUsage.getUsage,
-    isSignedIn ? { now: usageNow } : "skip",
   );
 
   useEffect(() => {
@@ -130,7 +124,6 @@ export default function Home() {
       setError("Analyze a post before starting a track.");
       return;
     }
-    setCreatingTrackId(String(conceptId));
     try {
       await createTrack({
         conceptIds: [conceptId],
@@ -138,8 +131,6 @@ export default function Home() {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start track.");
-    } finally {
-      setCreatingTrackId(null);
     }
   }
 
@@ -322,8 +313,8 @@ export default function Home() {
                   </div>
                 ) : (
                   suggestions.map((concept) => {
-                    const isFollowing = followKeys.has(
-                      `concept:${String(concept.id)}`,
+                    const isTracked = trackedConceptIds.has(
+                      String(concept.id),
                     );
                     return (
                       <div
@@ -344,15 +335,11 @@ export default function Home() {
                           </span>
                         </div>
                         <button
-                          onClick={() =>
-                            toggleFollow({
-                              targetType: "concept",
-                              targetId: concept.id,
-                            })
-                          }
-                          className="mt-4 w-full rounded-full border border-emerald-500/40 px-3 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300"
+                          onClick={() => handleCreateTrack(concept.id)}
+                          disabled={isTracked}
+                          className="mt-4 w-full rounded-full border border-emerald-500/40 px-3 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {isFollowing ? "Unfollow" : "Follow concept"}
+                          {isTracked ? "Track active" : "Start track"}
                         </button>
                         <button
                           onClick={() =>
@@ -368,50 +355,16 @@ export default function Home() {
                 )}
               </div>
 
-              {suggestions.length > 0 ? (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
-                      Learning tracks
-                    </h3>
-                    <p className="mt-2 text-sm text-neutral-400">
-                      Start a Feynman-style track from any concept you want to
-                      master.
-                    </p>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {suggestions.map((concept) => {
-                      const isTracked = trackedConceptIds.has(
-                        String(concept.id),
-                      );
-                      const isCreating =
-                        creatingTrackId === String(concept.id);
-                      return (
-                        <div
-                          key={`track-${concept.id}`}
-                          className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-5"
-                        >
-                          <p className="text-lg font-semibold text-neutral-100">
-                            Learn {concept.name}
-                          </p>
-                          <p className="mt-2 text-sm text-neutral-400">
-                            {concept.rationale}
-                          </p>
-                          <button
-                            onClick={() => handleCreateTrack(concept.id)}
-                            disabled={isTracked || isCreating}
-                            className="mt-4 w-full rounded-full border border-emerald-500/40 px-3 py-2 text-xs uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isTracked
-                              ? "Track active"
-                              : isCreating
-                                ? "Starting..."
-                                : "Start track"}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+              {postData?.post?.screenshotUrl ? (
+                <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.4em] text-emerald-200/60">
+                    Post preview
+                  </p>
+                  <img
+                    src={postData.post.screenshotUrl}
+                    alt="Captured post"
+                    className="mt-4 w-full rounded-2xl border border-emerald-900/40 object-cover"
+                  />
                 </div>
               ) : null}
 
@@ -468,35 +421,12 @@ export default function Home() {
 
               <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-6">
                 <h2 className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
-                  X API usage
+                  Browser capture
                 </h2>
                 <p className="mt-3 text-sm text-neutral-400">
-                  We cache analyses by URL to reduce calls. Paste text if you
-                  hit the limit.
+                  We render the post in a browser to capture text + screenshots
+                  for easier recall.
                 </p>
-                <div className="mt-4 text-sm text-neutral-300">
-                  {!xUsage ? (
-                    <p className="text-neutral-500">Sign in to view usage.</p>
-                  ) : (
-                    <>
-                      <p>
-                        {xUsage.total} / {xUsage.limit} requests in the last{" "}
-                        {xUsage.windowMinutes} minutes
-                      </p>
-                      <p className="mt-2 text-xs text-neutral-500">
-                        Rate limited: {xUsage.rateLimited}
-                      </p>
-                      {xUsage.lastResetAt ? (
-                        <p className="mt-2 text-xs text-neutral-500">
-                          Last reset:{" "}
-                          {new Date(
-                            xUsage.lastResetAt,
-                          ).toLocaleTimeString()}
-                        </p>
-                      ) : null}
-                    </>
-                  )}
-                </div>
               </div>
 
               <div className="rounded-2xl border border-emerald-900/40 bg-neutral-950/60 p-6">
@@ -517,12 +447,23 @@ export default function Home() {
                         onClick={() => setPostId(post._id)}
                         className="w-full rounded-2xl border border-emerald-900/40 bg-black/40 px-4 py-3 text-left text-xs text-neutral-400 transition hover:border-emerald-500/40"
                       >
-                        <p className="line-clamp-2 text-sm text-neutral-200">
-                          {post.text}
-                        </p>
-                        <p className="mt-2 text-[11px] uppercase tracking-[0.3em] text-neutral-500">
-                          {post.status}
-                        </p>
+                        <div className="flex items-start gap-3">
+                          {post.screenshotUrl ? (
+                            <img
+                              src={post.screenshotUrl}
+                              alt="Captured post"
+                              className="h-14 w-14 rounded-xl border border-emerald-900/40 object-cover"
+                            />
+                          ) : null}
+                          <div>
+                            <p className="line-clamp-2 text-sm text-neutral-200">
+                              {post.text}
+                            </p>
+                            <p className="mt-2 text-[11px] uppercase tracking-[0.3em] text-neutral-500">
+                              {post.status}
+                            </p>
+                          </div>
+                        </div>
                       </button>
                     ))
                   )}

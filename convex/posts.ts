@@ -33,6 +33,7 @@ export const createPostInternal = internalMutation({
     url: v.optional(v.string()),
     source: v.optional(v.union(v.literal("manual"), v.literal("x"))),
     authorHandle: v.optional(v.string()),
+    screenshotId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const { user } = await getOrCreateUser(ctx);
@@ -43,6 +44,7 @@ export const createPostInternal = internalMutation({
       text: args.text,
       url: args.url,
       source: args.source,
+      screenshotId: args.screenshotId,
       status: "pending",
       createdAt: Date.now(),
     });
@@ -54,6 +56,9 @@ export const getPost = query({
   handler: async (ctx, args) => {
     const post = await ctx.db.get(args.postId);
     if (!post) return null;
+    const screenshotUrl = post.screenshotId
+      ? await ctx.storage.getUrl(post.screenshotId)
+      : null;
     const suggestions = await ctx.db
       .query("suggestions")
       .withIndex("byPost", (q) => q.eq("postId", args.postId))
@@ -67,7 +72,10 @@ export const getPost = query({
         };
       }),
     );
-    return { post, suggestions: suggestionsWithConcepts };
+    return {
+      post: { ...post, screenshotUrl },
+      suggestions: suggestionsWithConcepts,
+    };
   },
 });
 
@@ -75,11 +83,19 @@ export const listUserPosts = query({
   args: {},
   handler: async (ctx) => {
     const { user } = await requireUser(ctx);
-    return ctx.db
+    const posts = await ctx.db
       .query("posts")
       .withIndex("byUser", (q) => q.eq("userId", user._id))
       .order("desc")
       .take(50);
+    return Promise.all(
+      posts.map(async (post) => ({
+        ...post,
+        screenshotUrl: post.screenshotId
+          ? await ctx.storage.getUrl(post.screenshotId)
+          : null,
+      })),
+    );
   },
 });
 
@@ -122,6 +138,9 @@ export const listFeed = query({
     for (const post of posts) {
       const matchedAuthor = !!post.authorId && authorIds.has(post.authorId);
       const author = post.authorId ? await ctx.db.get(post.authorId) : null;
+      const screenshotUrl = post.screenshotId
+        ? await ctx.storage.getUrl(post.screenshotId)
+        : null;
       const suggestions = await ctx.db
         .query("suggestions")
         .withIndex("byPost", (q) => q.eq("postId", post._id))
@@ -143,7 +162,7 @@ export const listFeed = query({
 
       if (matchedAuthor || suggestionsWithNames.length > 0) {
         feed.push({
-          post,
+          post: { ...post, screenshotUrl },
           suggestions: suggestionsWithNames,
           matchedAuthor,
           authorHandle: author?.handle ?? post.authorHandle ?? null,

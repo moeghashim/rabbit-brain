@@ -4,3 +4,6 @@
 2026-01-18 - Fixed track list typing by returning concept IDs as Id<"concepts"> and filtering nulls before response.
 2026-01-18 - Cleaned lint errors: typed follow sets in posts feed logic and switched layout/header nav links to Next Link components.
 2026-01-18 - Fixed duplicate React key issue by keying suggestion cards on suggestionId instead of conceptId.
+2026-01-18 - Filtered LLM/naive concepts against expanded stopwords and removed filler-only names; repurposed concept follow action to start tracks instead of feeding the follow list.
+2026-01-18 - Replaced X API import with agent-browser capture (text + screenshot), stored screenshots in Convex storage, and surfaced images across analysis, feed, and recent posts.
+2026-01-18 - Added agent-browser skill with a capture script to open URLs, extract text, and screenshot pages.

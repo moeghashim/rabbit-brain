@@ -22,6 +22,7 @@ export default defineSchema({
     text: v.string(),
     url: v.optional(v.string()),
     source: v.optional(v.union(v.literal("manual"), v.literal("x"))),
+    screenshotId: v.optional(v.id("_storage")),
     status: v.union(
       v.literal("pending"),
       v.literal("analyzed"),
