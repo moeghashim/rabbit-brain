@@ -1,0 +1,6 @@
+name = "rabbitbrain-capture"
+main = "src/index.ts"
+compatibility_date = "2025-09-17"
+compatibility_flags = ["nodejs_compat"]
+
+browser = { binding = "BROWSER" }

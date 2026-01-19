@@ -10,3 +10,4 @@
 2026-01-18 - Fixed feed type to include screenshotUrl on returned post objects.
 2026-01-18 - Added fallback screenshot capture for cached X URL imports so older cached posts still get images.
 2026-01-18 - Added explicit agent-browser binary lookup + ENOENT guidance for local/CI installs via AGENT_BROWSER_PATH or global npm install.
+2026-01-18 - Added Cloudflare capture worker (Playwright Browser Rendering) and switched importPost to call CAPTURE_SERVICE_URL for text + screenshot base64, storing the image in Convex storage.

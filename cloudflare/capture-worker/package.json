@@ -1,0 +1,12 @@
+{
+  "name": "rabbitbrain-capture-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/playwright": "^1.57.0"
+  }
+}

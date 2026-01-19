@@ -4,11 +4,7 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { randomUUID } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
-import path from "node:path";
+import { Buffer } from "node:buffer";
 
 function extractTweetId(rawUrl: string) {
   let parsed: URL;
@@ -52,82 +48,46 @@ function extractAuthorHandle(rawUrl: string) {
   return null;
 }
 
-const execFileAsync = promisify(execFile);
+const CAPTURE_SERVICE_URL = process.env.CAPTURE_SERVICE_URL;
+const CAPTURE_SERVICE_TOKEN = process.env.CAPTURE_SERVICE_TOKEN;
 
-const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_PATH || "agent-browser";
+type CaptureResponse = {
+  text: string;
+  screenshotBase64?: string | null;
+  authorHandle?: string | null;
+};
 
-async function runAgentBrowser(args: string[]) {
-  try {
-    const { stdout } = await execFileAsync(AGENT_BROWSER_BIN, args, {
-      timeout: 60000,
-    });
-    return stdout.trim();
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException;
-    if (err?.code === "ENOENT") {
-      throw new Error(
-        "agent-browser not found. Install it (npm install -g agent-browser && agent-browser install) or set AGENT_BROWSER_PATH to the binary.",
-      );
-    }
-    throw error;
+async function capturePost(url: string, screenshotOnly = false) {
+  if (!CAPTURE_SERVICE_URL) {
+    throw new Error(
+      "Capture service not configured. Set CAPTURE_SERVICE_URL.",
+    );
   }
-}
 
-function parseAgentJson(output: string) {
-  try {
-    return JSON.parse(output);
-  } catch {
-    return null;
+  const response = await fetch(CAPTURE_SERVICE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(CAPTURE_SERVICE_TOKEN
+        ? { Authorization: `Bearer ${CAPTURE_SERVICE_TOKEN}` }
+        : {}),
+    },
+    body: JSON.stringify({ url, screenshotOnly }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `Capture service error (${response.status}): ${body || "Unknown error"}`,
+    );
   }
-}
 
-async function capturePost(url: string) {
-  const session = `rb-${randomUUID()}`;
-  const screenshotPath = path.join("/tmp", `${session}.png`);
-  const waitScript = "new Promise((resolve) => setTimeout(resolve, 1200))";
-  const textScript = [
-    "(() => {",
-    "const nodes = Array.from(document.querySelectorAll('[data-testid=\"tweetText\"]'));",
-    "if (nodes.length) return nodes.map((n) => n.innerText).join(\"\\n\");",
-    "const article = document.querySelector(\"article\");",
-    "if (article) return article.innerText;",
-    "return document.body?.innerText?.slice(0, 4000) || \"\";",
-    "})()",
-  ].join("");
-
-  try {
-    await runAgentBrowser(["--session", session, "open", url]);
-    await runAgentBrowser(["--session", session, "eval", waitScript]);
-    const textOutput = await runAgentBrowser([
-      "--session",
-      session,
-      "eval",
-      textScript,
-      "--json",
-    ]);
-    const parsed = parseAgentJson(textOutput);
-    const text =
-      typeof parsed?.data === "string"
-        ? parsed.data
-        : typeof parsed?.result === "string"
-          ? parsed.result
-          : "";
-    await runAgentBrowser([
-      "--session",
-      session,
-      "screenshot",
-      screenshotPath,
-      "--full",
-    ]);
-
-    return { text, screenshotPath };
-  } finally {
-    try {
-      await runAgentBrowser(["--session", session, "close"]);
-    } catch {
-      // Swallow cleanup failures.
-    }
-  }
+  const payload = (await response.json()) as CaptureResponse;
+  return {
+    text: payload.text ?? "",
+    screenshotBase64: payload.screenshotBase64 ?? null,
+    authorHandle: payload.authorHandle ?? null,
+  };
 }
 
 type ImportPostResponse = {
@@ -151,12 +111,11 @@ export const importPost = action({
       let screenshotId = cached.post.screenshotId ?? undefined;
       if (!screenshotId) {
         try {
-          const capture = await capturePost(args.url);
-          if (capture.screenshotPath) {
-            const image = await readFile(capture.screenshotPath);
+          const capture = await capturePost(args.url, true);
+          if (capture.screenshotBase64) {
+            const image = Buffer.from(capture.screenshotBase64, "base64");
             const blob = new Blob([image], { type: "image/png" });
             screenshotId = await ctx.storage.store(blob);
-            await rm(capture.screenshotPath, { force: true });
           }
         } catch {
           // If capture fails, fall back to cached text without screenshot.
@@ -190,14 +149,18 @@ export const importPost = action({
         authorHandle: cached.authorHandle,
       };
     }
-    const { text, screenshotPath } = await capturePost(args.url);
+    const { text, screenshotBase64, authorHandle } = await capturePost(
+      args.url,
+    );
     if (!text) {
       throw new Error("No post text found from browser capture.");
     }
-    const image = await readFile(screenshotPath);
-    const blob = new Blob([image], { type: "image/png" });
-    const screenshotId = await ctx.storage.store(blob);
-    await rm(screenshotPath, { force: true });
+    let screenshotId: Id<"_storage"> | undefined;
+    if (screenshotBase64) {
+      const image = Buffer.from(screenshotBase64, "base64");
+      const blob = new Blob([image], { type: "image/png" });
+      screenshotId = await ctx.storage.store(blob);
+    }
 
     const postId: Id<"posts"> = await ctx.runMutation(
       internal.posts.createPostInternal,
@@ -206,10 +169,14 @@ export const importPost = action({
         url: args.url,
         source: "x",
         screenshotId,
-        authorHandle: extractAuthorHandle(args.url) ?? undefined,
+        authorHandle: authorHandle ?? extractAuthorHandle(args.url) ?? undefined,
       },
     );
 
-    return { postId, text, authorHandle: extractAuthorHandle(args.url) };
+    return {
+      postId,
+      text,
+      authorHandle: authorHandle ?? extractAuthorHandle(args.url),
+    };
   },
 });
