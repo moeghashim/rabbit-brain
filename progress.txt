@@ -22,3 +22,5 @@
 2026-01-19 - Upgraded analysis to gpt-4o with JSON schema, added concept ontology guidance, stricter single-word filtering, and injected user downvote feedback as avoid list.
 2026-01-19 - Added xAI provider (grok-4 by default) with JSON schema output and conditional schema constraints; keeps OpenAI fallback and avoid-list filtering.
 2026-01-19 - Switched default xAI model to grok-4-fast for lower latency.
+2026-01-19 - Pushed grok-4-fast default and set Convex env vars XAI_API_KEY/XAI_MODEL.
+2026-01-19 - Tightened concept extraction prompt to 1-3 high-signal concepts with banned tokens, adjusted schema to 1-3, and enforced post-filtering to avoid slang/filler.

@@ -95,6 +95,27 @@ const CONCEPT_ONTOLOGY = [
   "Business & strategy",
 ];
 
+const BANNED_TOKENS = new Set([
+  "yup",
+  "yeah",
+  "ok",
+  "okay",
+  "lol",
+  "lmao",
+  "nice",
+  "cool",
+  "myself",
+  "me",
+  "i",
+  "we",
+  "you",
+  "they",
+  "buit",
+  "tho",
+  "tbh",
+  "ngl",
+]);
+
 const ALLOWED_SINGLE_WORDS = new Set([
   "ai",
   "ml",
@@ -183,6 +204,11 @@ function isWeakSingleWord(value: string) {
   return normalized.length < 4;
 }
 
+function containsBannedToken(value: string) {
+  const tokens = normalizeConceptName(value).split(" ").filter(Boolean);
+  return tokens.some((token) => BANNED_TOKENS.has(token));
+}
+
 function sanitizeConcepts(
   concepts: ConceptSuggestion[],
   options?: { avoidConcepts?: string[] },
@@ -195,6 +221,9 @@ function sanitizeConcepts(
   );
   return concepts.filter((concept) => {
     if (isBadConceptName(concept.name)) {
+      return false;
+    }
+    if (containsBannedToken(concept.name)) {
       return false;
     }
     const normalized = normalizeConceptName(concept.name);
@@ -223,7 +252,7 @@ function naiveExtract(
 
   const concepts = Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
+    .slice(0, 3)
     .map(([word, count]) => ({
       name: toTitleCase(word.replace(/\+/g, " + ")),
       rationale: `Mentioned ${count}x in the post`,
@@ -287,17 +316,17 @@ async function llmExtract(
         : {
             ...schema,
             schema: {
-              ...schema.schema,
-              properties: {
-                ...schema.schema.properties,
-                concepts: {
-                  ...schema.schema.properties.concepts,
-                  minItems: 4,
-                  maxItems: 8,
-                },
+            ...schema.schema,
+            properties: {
+              ...schema.schema.properties,
+              concepts: {
+                ...schema.schema.properties.concepts,
+                minItems: 1,
+                maxItems: 3,
               },
             },
           },
+        },
   };
 
   const endpoint =
@@ -325,8 +354,12 @@ async function llmExtract(
         {
           role: "user",
           content: JSON.stringify({
-            task: "Extract 5-8 learning concepts, each with name, rationale, score (0-1), category (from ontology), and optional description. Use 2-4 word phrases when possible; only output single-word concepts if they are canonical technical terms. Avoid filler words (e.g., 'some', 'like') and generic stopwords. Do not output concepts the user rejected. Optionally include authorHandle if present.",
+            task: "Extract 1-3 high-signal learning concepts from the post. A valid concept is (a) a 2-4 word noun phrase OR (b) a canonical technical term/proper noun, and (c) commonly discussed by others (i.e., would plausibly appear in docs/blog titles). Reject slang, filler, pronouns, acknowledgements, typos, and generic verbs/adjectives. Prefer concepts that are central to the post’s point. Return an array of concepts with: name, rationale (1 sentence), score (0-1), category (must be one of ontology), and optional description (<= 160 chars).",
             text,
+            maxConcepts: 3,
+            minConcepts: 1,
+            conceptNameStyle: "Title Case; 2-4 words preferred",
+            bannedTokens: Array.from(BANNED_TOKENS),
             ontology: CONCEPT_ONTOLOGY,
             avoidConcepts: options?.avoidConcepts ?? [],
           }),
@@ -352,10 +385,11 @@ async function llmExtract(
       return naiveExtract(text, options);
     }
     const cleaned = sanitizeConcepts(parsed.concepts, options);
-    if (cleaned.length === 0) {
+    const limited = cleaned.slice(0, 3);
+    if (limited.length === 0) {
       return naiveExtract(text, options);
     }
-    return { ...parsed, concepts: cleaned };
+    return { ...parsed, concepts: limited };
   } catch {
     return naiveExtract(text, options);
   }
