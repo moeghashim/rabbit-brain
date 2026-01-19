@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { internalQuery, mutation } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { getOrCreateUser } from "./lib/users";
 
 export const submitFeedback = mutation({
@@ -31,5 +32,36 @@ export const submitFeedback = mutation({
     });
 
     return { status: "created" };
+  },
+});
+
+export const listDownvotedConceptNames = internalQuery({
+  args: {
+    userId: v.id("users"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+    const feedback = await ctx.db
+      .query("feedback")
+      .withIndex("byUser", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.eq(q.field("vote"), "down"))
+      .take(limit);
+
+    const names = new Set<string>();
+    await Promise.all(
+      feedback.map(async (item) => {
+        const suggestion = await ctx.db.get(item.suggestionId);
+        if (!suggestion) return;
+        const concept = await ctx.db.get(
+          suggestion.conceptId as Id<"concepts">,
+        );
+        if (concept?.name) {
+          names.add(concept.name);
+        }
+      }),
+    );
+
+    return Array.from(names).slice(0, limit);
   },
 });

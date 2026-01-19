@@ -70,12 +70,78 @@ type ConceptSuggestion = {
   rationale: string;
   score: number;
   description?: string;
+  category?: string;
 };
 
 type AnalysisResult = {
   concepts: ConceptSuggestion[];
   authorHandle?: string | null;
 };
+
+const CONCEPT_ONTOLOGY = [
+  "Agents & autonomy",
+  "Prompting & evaluation",
+  "Tooling & orchestration",
+  "Data & retrieval (RAG)",
+  "Model behavior & alignment",
+  "Software architecture",
+  "Developer workflow",
+  "Infrastructure & scaling",
+  "Security & privacy",
+  "Product & UX",
+  "Business & strategy",
+];
+
+const ALLOWED_SINGLE_WORDS = new Set([
+  "ai",
+  "ml",
+  "llm",
+  "llms",
+  "rag",
+  "oauth",
+  "tls",
+  "http",
+  "https",
+  "rust",
+  "python",
+  "golang",
+  "go",
+  "java",
+  "javascript",
+  "typescript",
+  "react",
+  "docker",
+  "kubernetes",
+  "postgres",
+  "redis",
+  "graphql",
+  "devops",
+]);
+
+const WEAK_SINGLE_WORDS = new Set([
+  "yup",
+  "yeah",
+  "yes",
+  "no",
+  "maybe",
+  "trying",
+  "made",
+  "make",
+  "built",
+  "build",
+  "myself",
+  "self",
+  "important",
+  "tips",
+  "way",
+  "stuff",
+  "things",
+  "people",
+  "someone",
+  "someone",
+  "anyone",
+  "everyone",
+]);
 
 function toTitleCase(value: string) {
   return value
@@ -101,14 +167,38 @@ function isBadConceptName(value: string) {
   return tokens.length > 0 && tokens.every((token) => STOPWORDS.has(token));
 }
 
-function sanitizeConcepts(concepts: ConceptSuggestion[]) {
+function isWeakSingleWord(value: string) {
+  const normalized = normalizeConceptName(value);
+  if (!normalized) return true;
+  if (normalized.includes(" ")) return false;
+  if (STOPWORDS.has(normalized) || WEAK_SINGLE_WORDS.has(normalized)) {
+    return true;
+  }
+  if (ALLOWED_SINGLE_WORDS.has(normalized)) {
+    return false;
+  }
+  return normalized.length < 4;
+}
+
+function sanitizeConcepts(
+  concepts: ConceptSuggestion[],
+  options?: { avoidConcepts?: string[] },
+) {
   const seen = new Set<string>();
+  const avoid = new Set(
+    (options?.avoidConcepts ?? [])
+      .map((value) => normalizeConceptName(value))
+      .filter(Boolean),
+  );
   return concepts.filter((concept) => {
     if (isBadConceptName(concept.name)) {
       return false;
     }
     const normalized = normalizeConceptName(concept.name);
-    if (!normalized || seen.has(normalized)) {
+    if (!normalized || seen.has(normalized) || avoid.has(normalized)) {
+      return false;
+    }
+    if (isWeakSingleWord(concept.name)) {
       return false;
     }
     seen.add(normalized);
@@ -116,7 +206,10 @@ function sanitizeConcepts(concepts: ConceptSuggestion[]) {
   });
 }
 
-function naiveExtract(text: string): AnalysisResult {
+function naiveExtract(
+  text: string,
+  options?: { avoidConcepts?: string[] },
+): AnalysisResult {
   const words = (text.toLowerCase().match(/[a-z0-9+\-]{3,}/g) || [])
     .filter((word) => !STOPWORDS.has(word))
     .slice(0, 40);
@@ -135,14 +228,17 @@ function naiveExtract(text: string): AnalysisResult {
     }));
 
   return {
-    concepts: sanitizeConcepts(concepts),
+    concepts: sanitizeConcepts(concepts, options),
     authorHandle: extractAuthorHandle(text),
   };
 }
 
-async function llmExtract(text: string): Promise<AnalysisResult> {
+async function llmExtract(
+  text: string,
+  options?: { avoidConcepts?: string[] },
+): Promise<AnalysisResult> {
   if (!OPENAI_API_KEY) {
-    return naiveExtract(text);
+    return naiveExtract(text, options);
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -152,7 +248,7 @@ async function llmExtract(text: string): Promise<AnalysisResult> {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.2,
       messages: [
         {
@@ -163,37 +259,70 @@ async function llmExtract(text: string): Promise<AnalysisResult> {
         {
           role: "user",
           content: JSON.stringify({
-            task: "Extract 5-8 learning concepts, each with name, rationale, score (0-1), and optional description. Avoid filler words (e.g., 'some', 'like') and generic stopwords. Optionally include authorHandle if present.",
+            task: "Extract 5-8 learning concepts, each with name, rationale, score (0-1), category (from ontology), and optional description. Use 2-4 word phrases when possible; only output single-word concepts if they are canonical technical terms. Avoid filler words (e.g., 'some', 'like') and generic stopwords. Do not output concepts the user rejected. Optionally include authorHandle if present.",
             text,
+            ontology: CONCEPT_ONTOLOGY,
+            avoidConcepts: options?.avoidConcepts ?? [],
           }),
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "concept_extraction",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              concepts: {
+                type: "array",
+                minItems: 4,
+                maxItems: 8,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: "string" },
+                    rationale: { type: "string" },
+                    score: { type: "number" },
+                    description: { type: "string" },
+                    category: { type: "string" },
+                  },
+                  required: ["name", "rationale", "score", "category"],
+                },
+              },
+              authorHandle: { type: ["string", "null"] },
+            },
+            required: ["concepts"],
+          },
+        },
+      },
     }),
   });
 
   if (!response.ok) {
-    return naiveExtract(text);
+    return naiveExtract(text, options);
   }
 
   const payload = await response.json();
   const content = payload?.choices?.[0]?.message?.content;
   if (!content) {
-    return naiveExtract(text);
+    return naiveExtract(text, options);
   }
 
   try {
     const parsed = JSON.parse(content) as AnalysisResult;
     if (!parsed?.concepts?.length) {
-      return naiveExtract(text);
+      return naiveExtract(text, options);
     }
-    const cleaned = sanitizeConcepts(parsed.concepts);
+    const cleaned = sanitizeConcepts(parsed.concepts, options);
     if (cleaned.length === 0) {
-      return naiveExtract(text);
+      return naiveExtract(text, options);
     }
     return { ...parsed, concepts: cleaned };
   } catch {
-    return naiveExtract(text);
+    return naiveExtract(text, options);
   }
 }
 
@@ -208,10 +337,18 @@ export const analyzePost = action({
     }
 
     try {
-      const analysis = await llmExtract(post.text);
+      const avoidConcepts = await ctx.runQuery(
+        internal.feedback.listDownvotedConceptNames,
+        { userId: post.userId, limit: 40 },
+      );
+      const analysis = await llmExtract(post.text, {
+        avoidConcepts,
+      });
       const conceptsPayload = analysis.concepts.map((concept) => ({
         name: concept.name,
-        description: concept.description,
+        description:
+          concept.description ??
+          (concept.category ? `Category: ${concept.category}` : undefined),
         aliases: [],
         status: "active" as const,
       }));
