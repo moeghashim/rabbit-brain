@@ -54,11 +54,23 @@ function extractAuthorHandle(rawUrl: string) {
 
 const execFileAsync = promisify(execFile);
 
+const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_PATH || "agent-browser";
+
 async function runAgentBrowser(args: string[]) {
-  const { stdout } = await execFileAsync("agent-browser", args, {
-    timeout: 60000,
-  });
-  return stdout.trim();
+  try {
+    const { stdout } = await execFileAsync(AGENT_BROWSER_BIN, args, {
+      timeout: 60000,
+    });
+    return stdout.trim();
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code === "ENOENT") {
+      throw new Error(
+        "agent-browser not found. Install it (npm install -g agent-browser && agent-browser install) or set AGENT_BROWSER_PATH to the binary.",
+      );
+    }
+    throw error;
+  }
 }
 
 function parseAgentJson(output: string) {
@@ -136,6 +148,21 @@ export const importPost = action({
       { url: args.url },
     );
     if (cached) {
+      let screenshotId = cached.post.screenshotId ?? undefined;
+      if (!screenshotId) {
+        try {
+          const capture = await capturePost(args.url);
+          if (capture.screenshotPath) {
+            const image = await readFile(capture.screenshotPath);
+            const blob = new Blob([image], { type: "image/png" });
+            screenshotId = await ctx.storage.store(blob);
+            await rm(capture.screenshotPath, { force: true });
+          }
+        } catch {
+          // If capture fails, fall back to cached text without screenshot.
+        }
+      }
+
       const postId: Id<"posts"> = await ctx.runMutation(
         internal.posts.createPostInternal,
         {
@@ -143,7 +170,7 @@ export const importPost = action({
           url: args.url,
           source: "x",
           authorHandle: cached.authorHandle ?? undefined,
-          screenshotId: cached.post.screenshotId ?? undefined,
+          screenshotId,
         },
       );
 

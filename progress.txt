@@ -7,3 +7,6 @@
 2026-01-18 - Filtered LLM/naive concepts against expanded stopwords and removed filler-only names; repurposed concept follow action to start tracks instead of feeding the follow list.
 2026-01-18 - Replaced X API import with agent-browser capture (text + screenshot), stored screenshots in Convex storage, and surfaced images across analysis, feed, and recent posts.
 2026-01-18 - Added agent-browser skill with a capture script to open URLs, extract text, and screenshot pages.
+2026-01-18 - Fixed feed type to include screenshotUrl on returned post objects.
+2026-01-18 - Added fallback screenshot capture for cached X URL imports so older cached posts still get images.
+2026-01-18 - Added explicit agent-browser binary lookup + ENOENT guidance for local/CI installs via AGENT_BROWSER_PATH or global npm install.

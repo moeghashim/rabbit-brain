@@ -124,7 +124,7 @@ export const listFeed = query({
 
     const posts = await ctx.db.query("posts").order("desc").take(50);
     const feed = [] as {
-      post: typeof posts[number];
+      post: typeof posts[number] & { screenshotUrl: string | null };
       suggestions: Array<{
         conceptId: string;
         name: string;
