@@ -7,6 +7,6 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
-    "@cloudflare/playwright": "^1.57.0"
+    "@cloudflare/playwright": "^1.1.0"
   }
 }

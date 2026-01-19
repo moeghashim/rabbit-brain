@@ -12,3 +12,4 @@
 2026-01-18 - Added explicit agent-browser binary lookup + ENOENT guidance for local/CI installs via AGENT_BROWSER_PATH or global npm install.
 2026-01-18 - Added Cloudflare capture worker (Playwright Browser Rendering) and switched importPost to call CAPTURE_SERVICE_URL for text + screenshot base64, storing the image in Convex storage.
 2026-01-18 - Added deployment README for the Cloudflare capture worker with setup + Convex env vars.
+2026-01-19 - Deployed Cloudflare capture worker, set CAPTURE_TOKEN secret, and configured Convex CAPTURE_SERVICE_URL/TOKEN for dev.
