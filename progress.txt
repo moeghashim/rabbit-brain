@@ -24,3 +24,5 @@
 2026-01-19 - Switched default xAI model to grok-4-fast for lower latency.
 2026-01-19 - Pushed grok-4-fast default and set Convex env vars XAI_API_KEY/XAI_MODEL.
 2026-01-19 - Tightened concept extraction prompt to 1-3 high-signal concepts with banned tokens, adjusted schema to 1-3, and enforced post-filtering to avoid slang/filler.
+2026-01-19 - Filtered post suggestions to only the latest analysis batch to avoid stale low-quality concepts lingering in UI.
+2026-01-19 - Added re-analyze action that clears prior suggestions and feedback for a post before re-running analysis, plus UI button.

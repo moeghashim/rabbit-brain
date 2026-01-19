@@ -8,6 +8,19 @@ import {
 import type { Id } from "./_generated/dataModel";
 import { getOrCreateUser, requireUser } from "./lib/users";
 
+const LATEST_SUGGESTION_WINDOW_MS = 2_000;
+
+function pickLatestSuggestions<T extends { createdAt: number }>(items: T[]) {
+  if (items.length === 0) return items;
+  let newest = items[0].createdAt;
+  for (const item of items) {
+    if (item.createdAt > newest) newest = item.createdAt;
+  }
+  return items.filter(
+    (item) => item.createdAt >= newest - LATEST_SUGGESTION_WINDOW_MS,
+  );
+}
+
 export const createPost = mutation({
   args: {
     text: v.string(),
@@ -58,8 +71,9 @@ export const getPost = query({
       .query("suggestions")
       .withIndex("byPost", (q) => q.eq("postId", args.postId))
       .collect();
+    const latestSuggestions = pickLatestSuggestions(suggestions);
     const suggestionsWithConcepts = await Promise.all(
-      suggestions.map(async (suggestion) => {
+      latestSuggestions.map(async (suggestion) => {
         const concept = await ctx.db.get(suggestion.conceptId);
         return {
           suggestion,
@@ -80,6 +94,41 @@ export const listUserPosts = query({
       .withIndex("byUser", (q) => q.eq("userId", user._id))
       .order("desc")
       .take(50);
+  },
+});
+
+export const resetPostAnalysis = mutation({
+  args: { postId: v.id("posts") },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const post = await ctx.db.get(args.postId);
+    if (!post || post.userId !== user._id) {
+      throw new Error("Post not found.");
+    }
+
+    const suggestions = await ctx.db
+      .query("suggestions")
+      .withIndex("byPost", (q) => q.eq("postId", args.postId))
+      .collect();
+
+    for (const suggestion of suggestions) {
+      const feedback = await ctx.db
+        .query("feedback")
+        .withIndex("bySuggestion", (q) =>
+          q.eq("suggestionId", suggestion._id),
+        )
+        .collect();
+      for (const entry of feedback) {
+        await ctx.db.delete(entry._id);
+      }
+      await ctx.db.delete(suggestion._id);
+    }
+
+    await ctx.db.patch(args.postId, {
+      status: "pending",
+    });
+
+    return { status: "ok" };
   },
 });
 
@@ -126,8 +175,8 @@ export const listFeed = query({
         .query("suggestions")
         .withIndex("byPost", (q) => q.eq("postId", post._id))
         .collect();
-      const matchedSuggestions = suggestions.filter((suggestion) =>
-        conceptIds.has(suggestion.conceptId),
+      const matchedSuggestions = pickLatestSuggestions(suggestions).filter(
+        (suggestion) => conceptIds.has(suggestion.conceptId),
       );
       const suggestionsWithNames = await Promise.all(
         matchedSuggestions.map(async (suggestion) => {

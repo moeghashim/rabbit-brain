@@ -23,6 +23,7 @@ export default function Home() {
   const toggleFollow = useMutation(api.follows.toggleFollow);
   const submitFeedback = useMutation(api.feedback.submitFeedback);
   const createTrack = useMutation(api.tracks.createTrack);
+  const resetPostAnalysis = useMutation(api.posts.resetPostAnalysis);
 
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
@@ -196,6 +197,20 @@ export default function Home() {
     }
   }
 
+  async function handleReanalyze() {
+    if (!postId) return;
+    setError(null);
+    try {
+      setIsAnalyzing(true);
+      await resetPostAnalysis({ postId });
+      await analyzePost({ postId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to re-analyze.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
   return (
     <div className="relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(164,239,110,0.18),_transparent_60%)]" />
@@ -306,9 +321,19 @@ export default function Home() {
           <section className="mt-16 grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-8 animate-fade-up-delay-2">
               <div>
-                <h2 className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
-                  Suggestions
-                </h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-xs uppercase tracking-[0.4em] text-emerald-200/60">
+                    Suggestions
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handleReanalyze}
+                    disabled={!postId || isAnalyzing}
+                    className="rounded-full border border-emerald-500/40 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-emerald-200/80 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isAnalyzing ? "Re-analyzing..." : "Re-analyze"}
+                  </button>
+                </div>
                 <p className="mt-3 text-sm text-neutral-400">
                   Concept clusters we pulled from your last analysis.
                 </p>
