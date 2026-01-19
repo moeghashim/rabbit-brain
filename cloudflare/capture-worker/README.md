@@ -27,6 +27,16 @@ CAPTURE_SERVICE_URL=https://<your-worker>.workers.dev
 CAPTURE_SERVICE_TOKEN=<same token if set>
 ```
 
+## Optional: X auth cookie
+
+If X shows a login wall, set an auth cookie on the worker:
+
+```
+wrangler secret put X_COOKIE
+```
+
+Use the raw `Cookie` header value from an authenticated X session (e.g. includes `auth_token` and `ct0`).
+
 ## Notes
 
 - Requires `@cloudflare/playwright` and `nodejs_compat`.

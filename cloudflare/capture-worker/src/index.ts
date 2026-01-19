@@ -1,4 +1,4 @@
-import { chromium } from "@cloudflare/playwright";
+import { launch } from "@cloudflare/playwright";
 import { Buffer } from "node:buffer";
 
 const TEXT_LIMIT = 4000;
@@ -15,6 +15,47 @@ function extractAuthorHandle(rawUrl: string) {
     // ignore
   }
   return null;
+}
+
+function parseCookieHeader(header: string | undefined) {
+  if (!header) return [];
+  const parts = header
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const pairs = parts
+    .map((part) => {
+      const [name, ...rest] = part.split("=");
+      const value = rest.join("=");
+      return name && value ? { name, value } : null;
+    })
+    .filter(
+      (pair): pair is { name: string; value: string } => pair !== null,
+    );
+
+  const domains = [".x.com", ".twitter.com"];
+  const cookies = [];
+  for (const domain of domains) {
+    for (const pair of pairs) {
+      cookies.push({
+        name: pair.name,
+        value: pair.value,
+        domain,
+        path: "/",
+      });
+    }
+  }
+  return cookies;
+}
+
+function isLoginWall(text: string) {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("don’t miss what’s happening") ||
+    normalized.includes("don't miss what's happening") ||
+    normalized.includes("log in") ||
+    normalized.includes("sign up")
+  );
 }
 
 export default {
@@ -46,10 +87,15 @@ export default {
     }
 
     const screenshotOnly = Boolean(payload?.screenshotOnly);
-    const browser = await chromium.launch(env.BROWSER);
-    const page = await browser.newPage({
+    const browser = await launch(env.BROWSER);
+    const context = await browser.newContext({
       viewport: { width: 1280, height: 720 },
     });
+    const cookies = parseCookieHeader(env.X_COOKIE);
+    if (cookies.length > 0) {
+      await context.addCookies(cookies);
+    }
+    const page = await context.newPage();
 
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -77,15 +123,22 @@ export default {
         ? await target.screenshot({ type: "png" })
         : await page.screenshot({ type: "png", fullPage: true });
       const screenshotBase64 = Buffer.from(screenshot).toString("base64");
+      const requiresAuth = !screenshotOnly && isLoginWall(text);
 
       return Response.json({
-        text,
+        text: requiresAuth ? "" : text,
         screenshotBase64,
         authorHandle: extractAuthorHandle(url),
+        requiresAuth,
       });
     } finally {
       try {
         await page.close();
+      } catch {
+        // ignore
+      }
+      try {
+        await context.close();
       } catch {
         // ignore
       }
@@ -101,4 +154,5 @@ export default {
 interface Env {
   BROWSER: Fetcher;
   CAPTURE_TOKEN?: string;
+  X_COOKIE?: string;
 }

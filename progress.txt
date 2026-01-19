@@ -15,3 +15,4 @@
 2026-01-19 - Deployed Cloudflare capture worker, set CAPTURE_TOKEN secret, and configured Convex CAPTURE_SERVICE_URL/TOKEN for dev.
 2026-01-18 - Updated analyze flow to always try URL capture for screenshots when a URL is provided, with fallback to pasted text if capture fails.
 2026-01-19 - Fixed Cloudflare capture worker crash by importing Buffer and redeployed the worker.
+2026-01-19 - Added login-wall detection and optional X_COOKIE support to the Cloudflare capture worker; Convex now surfaces auth-needed error.

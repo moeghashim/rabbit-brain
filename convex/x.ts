@@ -55,6 +55,7 @@ type CaptureResponse = {
   text: string;
   screenshotBase64?: string | null;
   authorHandle?: string | null;
+  requiresAuth?: boolean | null;
 };
 
 async function capturePost(url: string, screenshotOnly = false) {
@@ -87,6 +88,7 @@ async function capturePost(url: string, screenshotOnly = false) {
     text: payload.text ?? "",
     screenshotBase64: payload.screenshotBase64 ?? null,
     authorHandle: payload.authorHandle ?? null,
+    requiresAuth: payload.requiresAuth ?? false,
   };
 }
 
@@ -149,9 +151,13 @@ export const importPost = action({
         authorHandle: cached.authorHandle,
       };
     }
-    const { text, screenshotBase64, authorHandle } = await capturePost(
-      args.url,
-    );
+    const { text, screenshotBase64, authorHandle, requiresAuth } =
+      await capturePost(args.url);
+    if (requiresAuth) {
+      throw new Error(
+        "X requires login. Set X_COOKIE on the capture worker with your X auth cookies.",
+      );
+    }
     if (!text) {
       throw new Error("No post text found from browser capture.");
     }
