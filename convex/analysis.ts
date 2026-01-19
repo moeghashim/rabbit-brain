@@ -6,6 +6,9 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const XAI_API_KEY = process.env.XAI_API_KEY;
+const XAI_MODEL = process.env.XAI_MODEL || "grok-4-fast";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 const STOPWORDS = new Set([
   "the",
@@ -233,22 +236,85 @@ function naiveExtract(
   };
 }
 
+type LlmProvider = "xai" | "openai" | "none";
+
+function getProvider(): LlmProvider {
+  if (XAI_API_KEY) return "xai";
+  if (OPENAI_API_KEY) return "openai";
+  return "none";
+}
+
 async function llmExtract(
   text: string,
   options?: { avoidConcepts?: string[] },
 ): Promise<AnalysisResult> {
-  if (!OPENAI_API_KEY) {
-    return naiveExtract(text, options);
-  }
+  const provider = getProvider();
+  if (provider === "none") return naiveExtract(text, options);
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const schema = {
+    name: "concept_extraction",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        concepts: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              rationale: { type: "string" },
+              score: { type: "number" },
+              description: { type: "string" },
+              category: { type: "string" },
+            },
+            required: ["name", "rationale", "score", "category"],
+          },
+        },
+        authorHandle: { type: ["string", "null"] },
+      },
+      required: ["concepts"],
+    },
+  };
+
+  const responseFormat = {
+    type: "json_schema",
+    json_schema:
+      provider === "xai"
+        ? schema
+        : {
+            ...schema,
+            schema: {
+              ...schema.schema,
+              properties: {
+                ...schema.schema.properties,
+                concepts: {
+                  ...schema.schema.properties.concepts,
+                  minItems: 4,
+                  maxItems: 8,
+                },
+              },
+            },
+          },
+  };
+
+  const endpoint =
+    provider === "xai"
+      ? "https://api.x.ai/v1/chat/completions"
+      : "https://api.openai.com/v1/chat/completions";
+  const apiKey = provider === "xai" ? XAI_API_KEY : OPENAI_API_KEY;
+  const model = provider === "xai" ? XAI_MODEL : OPENAI_MODEL;
+
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model,
       temperature: 0.2,
       messages: [
         {
@@ -266,38 +332,7 @@ async function llmExtract(
           }),
         },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "concept_extraction",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              concepts: {
-                type: "array",
-                minItems: 4,
-                maxItems: 8,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    name: { type: "string" },
-                    rationale: { type: "string" },
-                    score: { type: "number" },
-                    description: { type: "string" },
-                    category: { type: "string" },
-                  },
-                  required: ["name", "rationale", "score", "category"],
-                },
-              },
-              authorHandle: { type: ["string", "null"] },
-            },
-            required: ["concepts"],
-          },
-        },
-      },
+      response_format: responseFormat,
     }),
   });
 

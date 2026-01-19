@@ -20,3 +20,5 @@
 2026-01-19 - Removed screenshotId from post schema and internal create mutation to fully drop screenshot feature.
 2026-01-19 - Restored tweetId extraction when reverting to X API import to fix TypeScript errors.
 2026-01-19 - Upgraded analysis to gpt-4o with JSON schema, added concept ontology guidance, stricter single-word filtering, and injected user downvote feedback as avoid list.
+2026-01-19 - Added xAI provider (grok-4 by default) with JSON schema output and conditional schema constraints; keeps OpenAI fallback and avoid-list filtering.
+2026-01-19 - Switched default xAI model to grok-4-fast for lower latency.
