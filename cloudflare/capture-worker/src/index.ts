@@ -1,4 +1,5 @@
 import { chromium } from "@cloudflare/playwright";
+import { Buffer } from "node:buffer";
 
 const TEXT_LIMIT = 4000;
 

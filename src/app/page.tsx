@@ -168,20 +168,27 @@ export default function Home() {
 
     try {
       setIsAnalyzing(true);
-      if (!trimmedText && trimmedUrl) {
+    if (trimmedUrl) {
+      try {
         const result = await importPost({ url: trimmedUrl });
         setText(result.text);
         setPostId(result.postId);
         await analyzePost({ postId: result.postId });
         return;
+      } catch (err) {
+        if (!trimmedText) {
+          throw err;
+        }
+        // Fall back to manual text analysis if capture fails.
       }
+    }
 
-      const id = await createPost({
-        text: trimmedText,
-        url: trimmedUrl ? trimmedUrl : undefined,
-      });
-      setPostId(id);
-      await analyzePost({ postId: id });
+    const id = await createPost({
+      text: trimmedText,
+      url: trimmedUrl ? trimmedUrl : undefined,
+    });
+    setPostId(id);
+    await analyzePost({ postId: id });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to analyze.");
     } finally {
